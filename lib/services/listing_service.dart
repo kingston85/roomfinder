@@ -9,6 +9,7 @@ class ListingService {
   static final ListingService instance = ListingService._();
 
   final _db = FirebaseFirestore.instance;
+  static final _epoch = DateTime(2000);
 
   CollectionReference<Map<String, dynamic>> get _listings =>
       _db.collection('listings');
@@ -16,18 +17,21 @@ class ListingService {
   // ---------- Renter side ----------
 
   /// Live listings confirmed in the last [AppConfig.freshDays] days, newest
-  /// confirmation first. Price, amenity and sort filters run on the phone so
-  /// only four composite indexes are needed (firestore.indexes.json).
+  /// confirmation first. Community and type are filtered on the phone, so the
+  /// only index needed is status + lastConfirmedAt (already created).
   Stream<List<Listing>> searchLive({String? community, String? type}) {
     final cutoff = DateTime.now().subtract(Duration(days: AppConfig.freshDays));
-    Query<Map<String, dynamic>> q = _listings.where('status', isEqualTo: 'live');
-    if (community != null) q = q.where('community', isEqualTo: community);
-    if (type != null) q = q.where('type', isEqualTo: type);
-    q = q
+    return _listings
+        .where('status', isEqualTo: 'live')
         .where('lastConfirmedAt', isGreaterThanOrEqualTo: Timestamp.fromDate(cutoff))
         .orderBy('lastConfirmedAt', descending: true)
-        .limit(200);
-    return q.snapshots().map((s) => s.docs.map(Listing.fromDoc).toList());
+        .limit(300)
+        .snapshots()
+        .map((s) => s.docs
+            .map(Listing.fromDoc)
+            .where((l) => community == null || l.community == community)
+            .where((l) => type == null || l.type == type)
+            .toList());
   }
 
   Stream<Listing?> watch(String id) => _listings
@@ -75,11 +79,12 @@ class ListingService {
 
   // ---------- Landlord / agent side ----------
 
+  /// Sorted on the phone so no extra index is needed.
   Stream<List<Listing>> myListings(String uid) => _listings
       .where('ownerId', isEqualTo: uid)
-      .orderBy('createdAt', descending: true)
       .snapshots()
-      .map((s) => s.docs.map(Listing.fromDoc).toList());
+      .map((s) => s.docs.map(Listing.fromDoc).toList()
+        ..sort((a, b) => (b.createdAt ?? _epoch).compareTo(a.createdAt ?? _epoch)));
 
   Future<String> create(Listing l, ListingContact contact) async {
     final ref = await _listings.add({
@@ -157,9 +162,9 @@ class ListingService {
 
   Stream<List<Listing>> pending() => _listings
       .where('status', isEqualTo: 'pending')
-      .orderBy('createdAt')
       .snapshots()
-      .map((s) => s.docs.map(Listing.fromDoc).toList());
+      .map((s) => s.docs.map(Listing.fromDoc).toList()
+        ..sort((a, b) => (a.createdAt ?? _epoch).compareTo(b.createdAt ?? _epoch)));
 
   Future<void> approve(String id, {required bool verified, required String adminId}) =>
       _listings.doc(id).update({
@@ -196,9 +201,9 @@ class ListingService {
   Stream<List<Report>> openReports() => _db
       .collection('reports')
       .where('status', isEqualTo: 'open')
-      .orderBy('createdAt', descending: true)
       .snapshots()
-      .map((s) => s.docs.map(Report.fromDoc).toList());
+      .map((s) => s.docs.map(Report.fromDoc).toList()
+        ..sort((a, b) => (b.createdAt ?? _epoch).compareTo(a.createdAt ?? _epoch)));
 
   Future<void> resolveReport(String id, String action) =>
       _db.collection('reports').doc(id).update({
