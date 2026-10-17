@@ -25,7 +25,8 @@ class AppConfig {
 
   /// Rough exchange rate used only to compare LRD and USD prices in filters.
   /// Update when the rate moves.
-  static const lrdPerUsd = double.fromEnvironment('LRD_PER_USD', defaultValue: 190);
+  static const _lrdPerUsdText = String.fromEnvironment('LRD_PER_USD');
+  static double get lrdPerUsd => double.tryParse(_lrdPerUsdText) ?? 190;
 
   /// Listings not confirmed within this many days are hidden from search.
   static const freshDays = 14;
