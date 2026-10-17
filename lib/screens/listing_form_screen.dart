@@ -301,14 +301,14 @@ class _ListingFormScreenState extends State<ListingFormScreen> {
             _section('3. Where is it?'),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _county,
+              initialValue: _county,
               decoration: const InputDecoration(labelText: 'County'),
               items: [for (final c in counties) DropdownMenuItem(value: c, child: Text(c))],
               onChanged: (v) => setState(() => _county = v ?? _county),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              value: _community,
+              initialValue: _community,
               decoration: const InputDecoration(labelText: 'Community'),
               items: [for (final c in communities) DropdownMenuItem(value: c, child: Text(c))],
               onChanged: (v) => setState(() => _community = v),

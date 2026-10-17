@@ -1,4 +1,4 @@
-/// Fixed lists used by forms and filters. Edit these to add places.
+// Fixed lists used by forms and filters. Edit these to add places.
 
 const counties = [
   'Montserrado',

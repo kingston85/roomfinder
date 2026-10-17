@@ -1,4 +1,4 @@
-/// Small helpers with no Firebase dependency (unit-tested in test/).
+// Small helpers with no Firebase dependency (unit-tested in test/).
 
 String withCommas(num value) {
   final whole = value.round().toString();
