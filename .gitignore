@@ -1,0 +1,30 @@
+# Flutter / Dart
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+.flutter-plugins
+.flutter-plugins-dependencies
+pubspec.lock
+
+# Generated in CI by `flutter create` (kept out of git on purpose)
+android/
+web/
+ios/
+linux/
+macos/
+windows/
+
+# Local settings and secrets
+build_env.json
+*.jks
+*.keystore
+key.properties
+google-services.json
+
+# Editors
+.idea/
+.vscode/
+*.iml
+.DS_Store
