@@ -1,0 +1,110 @@
+rules_version = '2';
+
+// RoomFinder LR — Firestore security rules.
+// Admins: set users/{uid}.role = "admin" by hand in the Firebase console.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function uid() { return request.auth.uid; }
+    function userDoc() { return get(/databases/$(database)/documents/users/$(uid())); }
+    function hasProfile() { return exists(/databases/$(database)/documents/users/$(uid())); }
+    function isAdmin() { return signedIn() && hasProfile() && userDoc().data.role == 'admin'; }
+    function notBanned() {
+      return signedIn() && (!hasProfile() || userDoc().data.get('banned', false) != true);
+    }
+    function changed() { return request.resource.data.diff(resource.data).affectedKeys(); }
+
+    // ---------- Users ----------
+    match /users/{userId} {
+      allow read: if signedIn() && (uid() == userId || isAdmin());
+
+      allow create: if signedIn() && uid() == userId
+        && request.resource.data.role in ['renter', 'landlord', 'agent']
+        && request.resource.data.get('banned', false) == false;
+
+      allow update: if isAdmin() || (
+        signedIn() && uid() == userId
+        && request.resource.data.get('banned', false) == resource.data.get('banned', false)
+        && (
+          request.resource.data.role == resource.data.role
+          || (request.resource.data.role in ['renter', 'landlord', 'agent'] && resource.data.role != 'admin')
+        )
+      );
+
+      // Saved listings: private to the user.
+      match /saves/{listingId} {
+        allow read, write: if signedIn() && uid() == userId;
+      }
+    }
+
+    // ---------- Listings ----------
+    match /listings/{listingId} {
+      function isOwner() { return signedIn() && resource.data.ownerId == uid(); }
+      function contentFields() {
+        return ['type', 'title', 'description', 'priceMonthly', 'currency', 'advanceMonths',
+                'county', 'community', 'landmark', 'bedrooms', 'amenities', 'photos',
+                'postedBy', 'agentFee'];
+      }
+      function validContent(d) {
+        return d.type is string && d.title is string && d.title.size() <= 120
+          && d.priceMonthly is number && d.priceMonthly > 0
+          && d.currency in ['USD', 'LRD']
+          && d.community is string
+          && d.photos is list && d.photos.size() <= 8
+          && d.postedBy in ['landlord', 'agent'];
+      }
+
+      // Everyone (even signed out) can read live listings; owners and admins see the rest.
+      allow read: if resource.data.status == 'live' || isOwner() || isAdmin();
+
+      allow create: if signedIn() && notBanned()
+        && request.resource.data.ownerId == uid()
+        && request.resource.data.status == 'pending'
+        && request.resource.data.approved == false
+        && request.resource.data.verified == false
+        && request.resource.data.featuredUntil == null
+        && validContent(request.resource.data);
+
+      allow update: if isAdmin() || (
+        isOwner() && notBanned()
+        && request.resource.data.ownerId == resource.data.ownerId
+        && (
+          // Availability only: "still free", "taken".
+          ( changed().hasOnly(['status', 'lastConfirmedAt', 'updatedAt'])
+            && ( request.resource.data.status == resource.data.status
+                 || request.resource.data.status in ['taken']
+                 || (request.resource.data.status == 'live' && resource.data.get('approved', false) == true) ) )
+          ||
+          // Content edit: goes back to review.
+          ( changed().hasOnly(contentFields().concat(['status', 'approved', 'verified', 'lastConfirmedAt', 'updatedAt']))
+            && request.resource.data.status == 'pending'
+            && request.resource.data.approved == false
+            && request.resource.data.verified == false
+            && validContent(request.resource.data) )
+        )
+      );
+
+      allow delete: if isOwner() || isAdmin();
+    }
+
+    // Contact numbers, kept apart from the listing so they can later be
+    // shown only after an unlock (change the read rule then).
+    match /listingContacts/{listingId} {
+      function listingOwner() {
+        return get(/databases/$(database)/documents/listings/$(listingId)).data.ownerId;
+      }
+      allow read: if signedIn();
+      allow write: if isAdmin() || (signedIn() && notBanned() && listingOwner() == uid());
+    }
+
+    // ---------- Reports ----------
+    match /reports/{reportId} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == uid()
+        && request.resource.data.status == 'open'
+        && request.resource.data.reason in ['taken', 'fake', 'wrong_price', 'scam', 'other'];
+      allow read, update, delete: if isAdmin();
+    }
+  }
+}
